@@ -77,8 +77,8 @@ pipeline {
                         timeout(time: 2, unit: "HOURS") {
                             input message: "Approve Deploy?", ok: "Yes"
                         }
+                        build job: "Log2N/CD/${env.BRANCH_NAME}"
                     }
-                    build job: "Log2N/CD/${env.BRANCH_NAME}"
                 }
             }
         }
