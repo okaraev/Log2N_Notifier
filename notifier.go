@@ -104,8 +104,13 @@ func main() {
 					log.Println(message)
 				} else {
 					if notification.Retried < notification.RetryCount {
+						notification.Retried++
 						err = DelayMessage(GlobalConfig.QueueConfig[0].QConnectionString, GlobalConfig.QueueConfig[0].QName, notification)
-						log.Println(err)
+						if err != nil {
+							log.Println(err)
+						}
+					} else {
+						log.Printf("Skipping after %d retries\nLog: %s\nMethod: %s", notification.Retried, notification.Log, notification.NotificationMethod)
 					}
 				}
 			}
@@ -128,8 +133,13 @@ func main() {
 					log.Println(message)
 				} else {
 					if notification.Retried < notification.RetryCount {
+						notification.Retried++
 						err = DelayMessage(GlobalConfig.QueueConfig[1].QConnectionString, GlobalConfig.QueueConfig[1].QName, notification)
-						log.Println(err)
+						if err != nil {
+							log.Println(err)
+						}
+					} else {
+						log.Printf("Skipping after %d retries\nLog: %s\nMethod: %s", notification.Retried, notification.Log, notification.NotificationMethod)
 					}
 				}
 			}
