@@ -105,6 +105,7 @@ func main() {
 			throw(err)
 			err := Note.Execute(notification)
 			if err != nil {
+				log.Println(err)
 				message := fmt.Sprint(err)
 				if strings.Contains(message, "cannot find method") {
 					log.Println(message)
@@ -134,6 +135,7 @@ func main() {
 			throw(err)
 			err := Note.Execute(notification)
 			if err != nil {
+				log.Println(err)
 				message := fmt.Sprint(err)
 				if strings.Contains(message, "cannot find method") {
 					log.Println(message)
