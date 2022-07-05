@@ -28,7 +28,13 @@ func throw(err error) {
 }
 
 func getEnvVars() error {
-	gramPath := os.Getenv("TelegramapiPath")
+	gramPath := os.Getenv("telegramapipath")
+	PQConStr := os.Getenv("pqconnectionstringpath")
+	PQName := os.Getenv("pqname")
+	PQServerAddress := os.Getenv("pqserveraddress")
+	SQServerAddress := os.Getenv("sqserveraddress")
+	SQConStr := os.Getenv("sqconnectionstringpath")
+	SQName := os.Getenv("sqname")
 	if gramPath == "" {
 		return fmt.Errorf("cannot get telegramapipath environment variable")
 	}
@@ -37,46 +43,46 @@ func getEnvVars() error {
 		return err
 	}
 	TelegramApiUri = strings.Split(string(teleBytes), "\n")[0]
-	PQConStr := os.Getenv("pqconnectionstringPath")
 	if PQConStr == "" {
 		return fmt.Errorf("cannot get pqconnectionstringpath environment variable")
 	}
-	PQName := os.Getenv("pqname")
 	if PQName == "" {
 		return fmt.Errorf("cannot get pqname environment variable")
 	}
-	SQConStr := os.Getenv("SQConnectionstringPath")
+	if PQServerAddress == "" {
+		return fmt.Errorf("cannot get pqserveraddress environment variable")
+	}
 	if SQConStr == "" {
 		return fmt.Errorf("cannot get sqconnectionstringpath environment variable")
 	}
-	SQName := os.Getenv("sqname")
+	if SQServerAddress == "" {
+		return fmt.Errorf("cannot get sqserveraddress environment variable")
+	}
 	if SQName == "" {
 		return fmt.Errorf("cannot get sqname environment variable")
 	}
-	q1 := qconfig{QConnectionString: PQConStr, QName: PQName}
-	q2 := qconfig{QConnectionString: SQConStr, QName: SQName}
+	pqpassbytes, err := os.ReadFile(PQConStr)
+	if err != nil {
+		return err
+	}
+	sqpassbytes, err := os.ReadFile(SQConStr)
+	if err != nil {
+		return err
+	}
+	pqpass := strings.Split(string(pqpassbytes), "\n")[0]
+	sqpass := strings.Split(string(sqpassbytes), "\n")[0]
+	pqconnectionstring := fmt.Sprintf("amqp://%s@%s", pqpass, PQServerAddress)
+	sqconnectionstring := fmt.Sprintf("amqp://%s@%s", sqpass, SQServerAddress)
+	q1 := qconfig{QConnectionString: pqconnectionstring, QName: PQName}
+	q2 := qconfig{QConnectionString: sqconnectionstring, QName: SQName}
 	qconf := []qconfig{q1, q2}
 	wconf := webconfig{qconf}
 	GlobalConfig = wconf
 	return nil
 }
 
-func getMQSecret() error {
-	for index, cstring := range GlobalConfig.QueueConfig {
-		mqpasscontent, err := os.ReadFile(cstring.QConnectionString)
-		if err != nil {
-			return err
-		}
-		mqConnString := strings.Split(string(mqpasscontent), "\n")[0]
-		GlobalConfig.QueueConfig[index].QConnectionString = mqConnString
-	}
-	return nil
-}
-
 func main() {
 	err := getEnvVars()
-	throw(err)
-	err = getMQSecret()
 	throw(err)
 	notificationMethods := []NotificationMethod{}
 	method := NotificationMethod{Function: sendTelegramMessage, Name: "Telegram"}
