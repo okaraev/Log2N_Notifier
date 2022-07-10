@@ -71,6 +71,7 @@ func (r *Retrier) Do(RMQServer string, QName string) (<-chan amqp.Delivery, erro
 				time.Sleep(r.HoldTime)
 				retryResult, err := r.Operation(RMQServer, QName)
 				if err != nil {
+					log.Println(err)
 					r.Multiply()
 				} else {
 					// if retry is success setting status to success and starting routine to receive messages
