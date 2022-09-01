@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 )
 
 type Notification struct {
@@ -15,46 +16,43 @@ type Notification struct {
 	Retried               int
 }
 
-type NotificationMethod struct {
-	Name     string
-	Function func(n Notification) error
-}
+type NotificationMethod struct{}
 
 type NotOperation struct {
-	note    Notification
-	methods []NotificationMethod
+	Type  reflect.Type
+	Value reflect.Value
 }
 
-func (n *NotOperation) New(Methods []NotificationMethod) {
-	n.note = Notification{}
-	n.methods = Methods
+func GetNotificationOperation() NotOperation {
+	NO := NotOperation{}
+	NO.Type = reflect.TypeOf(&NotificationMethod{})
+	NO.Value = reflect.ValueOf(&NotificationMethod{})
+	return NO
 }
 
 func (n *NotOperation) Execute(note Notification) error {
-	n.note = note
 	found := false
-	var notificationMethod func(n Notification) error
-	for _, method := range n.methods {
-		if method.Name == n.note.NotificationMethod {
-			notificationMethod = method.Function
+	for i := 0; i < n.Type.NumMethod(); i++ {
+		method := n.Type.Method(i)
+		if note.NotificationMethod == method.Name {
 			found = true
+			result := method.Func.Call([]reflect.Value{n.Value, reflect.ValueOf(note)})
+			if !result[0].IsNil() {
+				return fmt.Errorf("%v", result[0])
+			}
 			break
 		}
 	}
 	if !found {
-		return fmt.Errorf("cannot find method: %s", n.note.NotificationMethod)
-	}
-	err := notificationMethod(n.note)
-	if err != nil {
-		return err
+		return fmt.Errorf("cannot find method %s", note.NotificationMethod)
 	}
 	return nil
 }
 
-func sendTelegramMessage(n Notification) error {
+func (n NotificationMethod) Telegram(note Notification) error {
 	params := url.Values{
-		"chat_id": {n.NotificationRecipient},
-		"text":    {n.Log},
+		"chat_id": {note.NotificationRecipient},
+		"text":    {note.Log},
 	}
 	result, err := http.PostForm(TelegramApiUri, params)
 	if err != nil {

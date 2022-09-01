@@ -5,25 +5,29 @@ import (
 	"testing"
 )
 
-func MockNotifierFunction(n Notification) error {
+func (n NotificationMethod) ExistFunction(note Notification) error {
 	return nil
 }
 
+func TestNotificationMethod(t *testing.T) {
+	method := GetNotificationOperation()
+	if method.Type.NumMethod() != 2 {
+		t.Error("Have to return 2 instead of", method.Type.NumMethod())
+	}
+}
+
 func TestNotifyMessage(t *testing.T) {
-	methods := []NotificationMethod{}
-	methods = append(methods, NotificationMethod{Name: "Telegram", Function: MockNotifierFunction})
-	note := Notification{Log: "testLog", NotificationMethod: "Telegram", NotificationRecipient: "-591104865"}
-	myNote := NotOperation{}
-	myNote.New(methods)
-	err := myNote.Execute(note)
+	method := GetNotificationOperation()
+	note := Notification{Log: "testLog", NotificationMethod: "ExistFunction", NotificationRecipient: "-591104865"}
+	err := method.Execute(note)
 	if err != nil {
-		t.Error("Have to return nil instead of error")
+		t.Error("Have to return nil instead of error:", err)
 	}
 	note2 := Notification{Log: "testLog", NotificationMethod: "MethodWhichDoesNotExist", NotificationRecipient: "-591104865"}
-	err = myNote.Execute(note2)
+	err = method.Execute(note2)
 	if err == nil {
 		t.Error("Have to return error instead of nil")
-	} else if fmt.Sprint(err) != "cannot find method: MethodWhichDoesNotExist" {
-		t.Errorf("Have to return 'cannot find method: MethodWhichDoesNotExist', but returns: %s", fmt.Sprint(err))
+	} else if fmt.Sprint(err) != "cannot find method MethodWhichDoesNotExist" {
+		t.Errorf("Have to return 'cannot find method MethodWhichDoesNotExist', but returns: %s", fmt.Sprint(err))
 	}
 }
