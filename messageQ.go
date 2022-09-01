@@ -19,11 +19,13 @@ type Retrier struct {
 	Operation   func(q string, qq string) (<-chan amqp.Delivery, error)
 }
 
-func (r *Retrier) New(myFunc func(q string, qq string) (<-chan amqp.Delivery, error)) {
+func GetRetrierInstance(Func func(q string, qq string) (<-chan amqp.Delivery, error)) Retrier {
+	r := Retrier{}
 	r.HoldTime = 10 * time.Second
 	r.MaxHoldTime = 360 * time.Second
 	r.Status = "Closed"
-	r.Operation = myFunc
+	r.Operation = Func
+	return r
 }
 
 func (r *Retrier) Open() {

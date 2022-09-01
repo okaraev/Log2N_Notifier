@@ -84,15 +84,9 @@ func getEnvVars() error {
 func main() {
 	err := getEnvVars()
 	throw(err)
-	notificationMethods := []NotificationMethod{}
-	method := NotificationMethod{Function: sendTelegramMessage, Name: "Telegram"}
-	notificationMethods = append(notificationMethods, method)
-	Note := NotOperation{}
-	Note.New(notificationMethods)
-	myRetrierP := Retrier{}
-	myRetrierP.New(ReceiveMessage)
-	myRetrierS := Retrier{}
-	myRetrierS.New(ReceiveMessage)
+	Note := GetNotificationOperation()
+	myRetrierP := GetRetrierInstance(ReceiveMessage)
+	myRetrierS := GetRetrierInstance(ReceiveMessage)
 	messages, err := myRetrierP.Do(GlobalConfig.QueueConfig[0].QConnectionString, GlobalConfig.QueueConfig[0].QName)
 	throw(err)
 	messagesfromSecondary, err := myRetrierS.Do(GlobalConfig.QueueConfig[1].QConnectionString, GlobalConfig.QueueConfig[1].QName)
@@ -107,9 +101,7 @@ func main() {
 			if err != nil {
 				log.Println(err)
 				message := fmt.Sprint(err)
-				if strings.Contains(message, "cannot find method") {
-					log.Println(message)
-				} else {
+				if !strings.Contains(message, "cannot find method") {
 					if notification.Retried < notification.RetryCount {
 						notification.Retried++
 						err = DelayMessage(GlobalConfig.QueueConfig[0].QConnectionString, GlobalConfig.QueueConfig[0].QName, notification)
@@ -137,9 +129,7 @@ func main() {
 			if err != nil {
 				log.Println(err)
 				message := fmt.Sprint(err)
-				if strings.Contains(message, "cannot find method") {
-					log.Println(message)
-				} else {
+				if !strings.Contains(message, "cannot find method") {
 					if notification.Retried < notification.RetryCount {
 						notification.Retried++
 						err = DelayMessage(GlobalConfig.QueueConfig[1].QConnectionString, GlobalConfig.QueueConfig[1].QName, notification)
