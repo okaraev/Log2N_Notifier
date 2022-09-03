@@ -2,118 +2,84 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/streadway/amqp"
-	"go.mongodb.org/mongo-driver/bson"
 )
 
-type Retrier struct {
-	Status      string        // Retrier Status
-	HoldTime    time.Duration // Time duration after which Operation will retry. If Operation fails hold time multiplies until 360 seconds
-	MaxHoldTime time.Duration
-	Operation   func(q string, qq string) (<-chan amqp.Delivery, error)
+type ConnectionStatus struct {
+	params      qconfig
+	isConnected bool
 }
 
-func GetRetrierInstance(Func func(q string, qq string) (<-chan amqp.Delivery, error)) Retrier {
-	r := Retrier{}
-	r.HoldTime = 10 * time.Second
-	r.MaxHoldTime = 360 * time.Second
-	r.Status = "Closed"
-	r.Operation = Func
-	return r
+type ConnectionList struct {
+	List []ConnectionStatus
 }
 
-func (r *Retrier) Open() {
-	r.Status = "Open"
-}
-
-func (r *Retrier) Close() {
-	r.HoldTime = 10 * time.Second
-	r.Status = "Closed"
-}
-
-func (r *Retrier) Multiply() {
-	if r.HoldTime <= r.MaxHoldTime {
-		r.HoldTime = r.HoldTime * 2
-	}
-}
-
-func (r *Retrier) isClosed() bool {
-	return r.Status == "Closed"
-}
-
-func (r *Retrier) Do(RMQServer string, QName string) (<-chan amqp.Delivery, error) {
-	result, err := r.Operation(RMQServer, QName)
-	mydelivery := make(chan amqp.Delivery)
-	if err != nil {
-		r.Open()
-		log.Println(err)
-	}
-	if r.isClosed() {
-		// if status is success starting routine to receive messages
-		go func() {
-			for message := range result {
-				mydelivery <- message
+func (c *ConnectionList) GetConfig(action int) qconfig {
+	i := 0
+	for index, item := range c.List {
+		if action == 1 {
+			if !item.isConnected {
+				i = index
 			}
-			// Ending routine when error happened and setting status to fail
-			r.Open()
-		}()
-	}
-	// Starting forever loop in routine to check if status is fail
-	go func() {
-		for {
-			time.Sleep(1 * time.Second)
-			if !r.isClosed() {
-				// if status is fail waiting for defined hold time and trying again
-				time.Sleep(r.HoldTime)
-				retryResult, err := r.Operation(RMQServer, QName)
-				if err != nil {
-					log.Println(err)
-					r.Multiply()
-				} else {
-					// if retry is success setting status to success and starting routine to receive messages
-					r.Close()
-					go func() {
-						for message := range retryResult {
-							mydelivery <- message
-						}
-						// Ending routine when error happened and setting status to fail
-						r.Open()
-					}()
-				}
+		} else {
+			if item.isConnected {
+				i = index
 			}
 		}
-	}()
-	return (<-chan amqp.Delivery)(mydelivery), nil
+	}
+	c.List[i].isConnected = true
+	return c.List[i].params
 }
 
-func ReceiveMessage(RMQServer string, queue string) (<-chan amqp.Delivery, error) {
-	connectRabbitMQ, err := amqp.Dial(RMQServer)
+func (c *ConnectionList) Release(conf qconfig) {
+	for index, item := range c.List {
+		if item.params.QConnectionString == conf.QConnectionString && item.params.QName == conf.QName {
+			c.List[index].isConnected = false
+		}
+	}
+}
+
+func ReceiveMessage() (<-chan interface{}, error) {
+	abstractchan := make(chan interface{})
+	confParams := ConnList.GetConfig(1)
+	connectRabbitMQ, err := amqp.Dial(confParams.QConnectionString)
 	if err != nil {
 		return nil, err
 	}
 	channelRabbitMQ, err := connectRabbitMQ.Channel()
 	if err != nil {
+		ConnList.Release(confParams)
 		connectRabbitMQ.Close()
 		return nil, err
 	}
 	consumerName := os.Getenv("COMPUTERNAME")
-	messages, err := channelRabbitMQ.Consume(queue, consumerName, false, false, false, false, nil)
+	messages, err := channelRabbitMQ.Consume(confParams.QName, consumerName, false, false, false, false, nil)
 	if err != nil {
+		ConnList.Release(confParams)
 		connectRabbitMQ.Close()
 		channelRabbitMQ.Close()
 		return nil, err
 	}
-	return (<-chan amqp.Delivery)(messages), nil
+	go func() {
+		for mess := range messages {
+			abstractchan <- mess
+		}
+	}()
+	return abstractchan, nil
 }
 
-func DelayMessage(RMQServer string, QName string, i interface{}) error {
-	connectRabbitMQ, err := amqp.Dial(RMQServer)
+func DelayMessage(message interface{}) error {
+	notification, ok := message.(Notification)
+	if !ok {
+		return fmt.Errorf("message is not notification")
+	}
+	confParams := ConnList.GetConfig(2)
+	connectRabbitMQ, err := amqp.Dial(confParams.QConnectionString)
 	if err != nil {
 		return err
 	}
@@ -123,20 +89,11 @@ func DelayMessage(RMQServer string, QName string, i interface{}) error {
 		return err
 	}
 	defer channelRabbitMQ.Close()
-	bytes, err := json.Marshal(i)
+	bytes, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
-	M := bson.M{}
-	err = json.Unmarshal(bytes, &M)
-	if err != nil {
-		return err
-	}
-	val, ok := M["HoldTime"]
-	if !ok {
-		return errors.New("cannot find holdtime field")
-	}
-	HoldTime := int(val.(float64))
+	HoldTime := notification.HoldTime
 	DelayQ := fmt.Sprintf("DelayedQ_%d", HoldTime)
 	HoldTimems := HoldTime * 1000
 	_, err = channelRabbitMQ.QueueDeclare(
@@ -146,22 +103,57 @@ func DelayMessage(RMQServer string, QName string, i interface{}) error {
 		false,  // exclusive
 		false,  // no wait
 		amqp.Table{
-			"x-dead-letter-exchange":    "",             // Excchange where to send after TTL expire
-			"x-dead-letter-routing-key": QName,          // Queue name
-			"x-message-ttl":             HoldTimems,     // Q Messages expiration time before moving to other Q
-			"x-expires":                 HoldTimems * 2, // Delete Q after x time
+			"x-dead-letter-exchange":    "",               // Excchange where to send after TTL expire
+			"x-dead-letter-routing-key": confParams.QName, // Queue name
+			"x-message-ttl":             HoldTimems,       // Q Messages expiration time before moving to other Q
+			"x-expires":                 HoldTimems * 2,   // Delete Q after x time
 		}, // arguments
 	)
 	if err != nil {
 		return err
 	}
-	message := amqp.Publishing{
+	data := amqp.Publishing{
 		ContentType: "application/json",
 		Body:        bytes,
 	}
-	err = channelRabbitMQ.Publish("", DelayQ, false, false, message)
+	err = channelRabbitMQ.Publish("", DelayQ, false, false, data)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func ProcessMessage(message interface{}, Delayer func(message interface{}) error) error {
+	delivery, ok := message.(amqp.Delivery)
+	if !ok {
+		return fmt.Errorf("message argument is not delivery")
+	}
+	notification := Notification{}
+	Note := GetNotificationOperation()
+	err := json.Unmarshal(delivery.Body, &notification)
+	if err != nil {
+		return err
+	}
+	err = Note.Execute(notification)
+	if err != nil {
+		log.Println(err)
+		errmessage := fmt.Sprint(err)
+		if !strings.Contains(errmessage, "cannot find method") {
+			if notification.Retried < notification.RetryCount {
+				notification.Retried++
+				err = Delayer(notification)
+				if err != nil {
+					log.Println(err)
+				}
+			} else {
+				log.Printf("Skipping after %d retries\nLog: %s\nMethod: %s", notification.Retried, notification.Log, notification.NotificationMethod)
+			}
+		}
+	}
+	err = delivery.Ack(true)
+	if err != nil {
+		log.Println(err)
+		return (fmt.Errorf("cannot acknowledge; %v", err))
 	}
 	return nil
 }
