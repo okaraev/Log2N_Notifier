@@ -12,12 +12,21 @@ type Retrier struct {
 	Operation   func() (<-chan interface{}, error)
 }
 
-func GetRetrierInstance(Func func() (<-chan interface{}, error)) Retrier {
+func GetRetrierOverloadInstance(Func func() (<-chan interface{}, error)) Retrier {
 	r := Retrier{}
 	r.HoldTime = 10 * time.Second
 	r.MaxHoldTime = 360 * time.Second
 	r.Status = "Closed"
 	r.Operation = Func
+	return r
+}
+
+func GetRetrierDefaultInstance() Retrier {
+	r := Retrier{}
+	r.HoldTime = 10 * time.Second
+	r.MaxHoldTime = 360 * time.Second
+	r.Status = "Closed"
+	r.Operation = ReceiveMessage
 	return r
 }
 

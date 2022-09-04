@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 )
 
 type qconfig struct {
@@ -91,8 +90,8 @@ func main() {
 	err := getEnvVars()
 	throw(err)
 	FM := GetFileManagerDefaultInstance()
-	myRetrierP := GetRetrierInstance(ReceiveMessage)
-	myRetrierS := GetRetrierInstance(ReceiveMessage)
+	myRetrierP := GetRetrierDefaultInstance()
+	myRetrierS := GetRetrierDefaultInstance()
 	messages, err := myRetrierP.Do()
 	throw(err)
 	messagesfromSecondary, err := myRetrierS.Do()
@@ -110,8 +109,6 @@ func main() {
 			}
 		}
 	}()
-	// temporary avoiding race condition
-	time.Sleep(2 * time.Second)
 	go func() {
 		for message := range messagesfromSecondary {
 			err := FM.Process(message, FM.Delayer)

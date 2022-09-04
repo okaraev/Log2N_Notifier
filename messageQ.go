@@ -6,9 +6,12 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/streadway/amqp"
 )
+
+var syncContext sync.Mutex
 
 type ConnectionStatus struct {
 	params      qconfig
@@ -20,15 +23,19 @@ type ConnectionList struct {
 }
 
 func (c *ConnectionList) GetConfig(action int) qconfig {
+	syncContext.Lock()
+	defer syncContext.Unlock()
 	i := 0
 	for index, item := range c.List {
 		if action == 1 {
 			if !item.isConnected {
 				i = index
+				break
 			}
 		} else {
 			if item.isConnected {
 				i = index
+				break
 			}
 		}
 	}
