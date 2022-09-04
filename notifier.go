@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 )
@@ -16,6 +14,8 @@ type qconfig struct {
 type webconfig struct {
 	QueueConfig []qconfig
 }
+
+var ConnList ConnectionList
 
 var GlobalConfig webconfig
 
@@ -78,73 +78,46 @@ func getEnvVars() error {
 	qconf := []qconfig{q1, q2}
 	wconf := webconfig{qconf}
 	GlobalConfig = wconf
+	connectionlist1 := ConnectionStatus{isConnected: false, params: GlobalConfig.QueueConfig[0]}
+	connectionlist2 := ConnectionStatus{isConnected: false, params: GlobalConfig.QueueConfig[1]}
+	list := []ConnectionStatus{}
+	list = append(list, connectionlist1, connectionlist2)
+	ConnList.List = list
 	return nil
 }
 
 func main() {
 	err := getEnvVars()
 	throw(err)
-	Note := GetNotificationOperation()
-	myRetrierP := GetRetrierInstance(ReceiveMessage)
-	myRetrierS := GetRetrierInstance(ReceiveMessage)
-	messages, err := myRetrierP.Do(GlobalConfig.QueueConfig[0].QConnectionString, GlobalConfig.QueueConfig[0].QName)
+	FM := GetFileManagerDefaultInstance()
+	myRetrierP := GetRetrierDefaultInstance()
+	myRetrierS := GetRetrierDefaultInstance()
+	messages, err := myRetrierP.Do()
 	throw(err)
-	messagesfromSecondary, err := myRetrierS.Do(GlobalConfig.QueueConfig[1].QConnectionString, GlobalConfig.QueueConfig[1].QName)
+	messagesfromSecondary, err := myRetrierS.Do()
 	throw(err)
 	forever := make(chan bool)
 	go func() {
 		for message := range messages {
-			notification := Notification{}
-			err = json.Unmarshal(message.Body, &notification)
-			throw(err)
-			err := Note.Execute(notification)
+			err := FM.Process(message, FM.Delayer)
 			if err != nil {
-				log.Println(err)
-				message := fmt.Sprint(err)
-				if !strings.Contains(message, "cannot find method") {
-					if notification.Retried < notification.RetryCount {
-						notification.Retried++
-						err = DelayMessage(GlobalConfig.QueueConfig[0].QConnectionString, GlobalConfig.QueueConfig[0].QName, notification)
-						if err != nil {
-							log.Println(err)
-						}
-					} else {
-						log.Printf("Skipping after %d retries\nLog: %s\nMethod: %s", notification.Retried, notification.Log, notification.NotificationMethod)
-					}
+				if strings.Contains(fmt.Sprint(err), "cannot acknowledge") {
+					myRetrierP.Open()
+				} else {
+					panic(err)
 				}
-			}
-			err = message.Ack(true)
-			if err != nil {
-				log.Println(err)
-				myRetrierP.Open()
 			}
 		}
 	}()
 	go func() {
 		for message := range messagesfromSecondary {
-			notification := Notification{}
-			err = json.Unmarshal(message.Body, &notification)
-			throw(err)
-			err := Note.Execute(notification)
+			err := FM.Process(message, FM.Delayer)
 			if err != nil {
-				log.Println(err)
-				message := fmt.Sprint(err)
-				if !strings.Contains(message, "cannot find method") {
-					if notification.Retried < notification.RetryCount {
-						notification.Retried++
-						err = DelayMessage(GlobalConfig.QueueConfig[1].QConnectionString, GlobalConfig.QueueConfig[1].QName, notification)
-						if err != nil {
-							log.Println(err)
-						}
-					} else {
-						log.Printf("Skipping after %d retries\nLog: %s\nMethod: %s", notification.Retried, notification.Log, notification.NotificationMethod)
-					}
+				if strings.Contains(fmt.Sprint(err), "cannot acknowledge") {
+					myRetrierS.Open()
+				} else {
+					panic(err)
 				}
-			}
-			err = message.Ack(true)
-			if err != nil {
-				log.Println(err)
-				myRetrierS.Open()
 			}
 		}
 	}()
