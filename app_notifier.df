@@ -1,6 +1,6 @@
 FROM golang:1.18-alpine AS builder
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates=20220614-r0
 WORKDIR /build
 
 COPY ["go.mod","go.sum","*.go", "./"]
