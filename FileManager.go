@@ -9,26 +9,17 @@ type FileManager struct {
 
 func (f FileManager) StartReceive() (<-chan interface{}, error) {
 	result, err := f.Receiver(f.ConnectionParams)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return result, err
 }
 
 func (f FileManager) Delay(message interface{}) error {
 	err := f.Delayer(message, f.ConnectionParams)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (f FileManager) Process(message interface{}, Delayer func(message interface{}) error) error {
 	err := f.Processor(message, Delayer)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func GetFileManagerDefaultInstance(connectionParams interface{}) FileManager {
