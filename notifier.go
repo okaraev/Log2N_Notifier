@@ -15,8 +15,6 @@ type webconfig struct {
 	QueueConfig []qconfig
 }
 
-var ConnList ConnectionList
-
 var GlobalConfig webconfig
 
 var TelegramApiUri string
@@ -78,20 +76,16 @@ func getEnvVars() error {
 	qconf := []qconfig{q1, q2}
 	wconf := webconfig{qconf}
 	GlobalConfig = wconf
-	connectionlist1 := ConnectionStatus{isConnected: false, params: GlobalConfig.QueueConfig[0]}
-	connectionlist2 := ConnectionStatus{isConnected: false, params: GlobalConfig.QueueConfig[1]}
-	list := []ConnectionStatus{}
-	list = append(list, connectionlist1, connectionlist2)
-	ConnList.List = list
 	return nil
 }
 
 func main() {
 	err := getEnvVars()
 	throw(err)
-	FM := GetFileManagerDefaultInstance()
-	myRetrierP := GetRetrierDefaultInstance()
-	myRetrierS := GetRetrierDefaultInstance()
+	FMP := GetFileManagerDefaultInstance(GlobalConfig.QueueConfig[0])
+	FMS := GetFileManagerDefaultInstance(GlobalConfig.QueueConfig[1])
+	myRetrierP := GetRetrierOverloadInstance(FMP.StartReceive)
+	myRetrierS := GetRetrierOverloadInstance(FMS.StartReceive)
 	messages, err := myRetrierP.Do()
 	throw(err)
 	messagesfromSecondary, err := myRetrierS.Do()
@@ -99,7 +93,7 @@ func main() {
 	forever := make(chan bool)
 	go func() {
 		for message := range messages {
-			err := FM.Process(message, FM.Delayer)
+			err := FMP.Process(message, FMP.Delay)
 			if err != nil {
 				if strings.Contains(fmt.Sprint(err), "cannot acknowledge") {
 					myRetrierP.Open()
@@ -111,7 +105,7 @@ func main() {
 	}()
 	go func() {
 		for message := range messagesfromSecondary {
-			err := FM.Process(message, FM.Delayer)
+			err := FMS.Process(message, FMS.Delay)
 			if err != nil {
 				if strings.Contains(fmt.Sprint(err), "cannot acknowledge") {
 					myRetrierS.Open()
