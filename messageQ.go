@@ -6,68 +6,28 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/streadway/amqp"
 )
 
-var syncContext sync.Mutex
-
-type ConnectionStatus struct {
-	params      qconfig
-	isConnected bool
-}
-
-type ConnectionList struct {
-	List []ConnectionStatus
-}
-
-func (c *ConnectionList) GetConfig(action int) qconfig {
-	syncContext.Lock()
-	defer syncContext.Unlock()
-	i := 0
-	for index, item := range c.List {
-		if action == 1 {
-			if !item.isConnected {
-				i = index
-				break
-			}
-		} else {
-			if item.isConnected {
-				i = index
-				break
-			}
-		}
-	}
-	c.List[i].isConnected = true
-	return c.List[i].params
-}
-
-func (c *ConnectionList) Release(conf qconfig) {
-	for index, item := range c.List {
-		if item.params.QConnectionString == conf.QConnectionString && item.params.QName == conf.QName {
-			c.List[index].isConnected = false
-		}
-	}
-}
-
-func ReceiveMessage() (<-chan interface{}, error) {
+func ReceiveMessage(connectionParams interface{}) (<-chan interface{}, error) {
 	abstractchan := make(chan interface{})
-	confParams := ConnList.GetConfig(1)
+	confParams, ok := connectionParams.(qconfig)
+	if !ok {
+		return nil, fmt.Errorf("connectionparams argument is not 'qconfig' type")
+	}
 	connectRabbitMQ, err := amqp.Dial(confParams.QConnectionString)
 	if err != nil {
 		return nil, err
 	}
 	channelRabbitMQ, err := connectRabbitMQ.Channel()
 	if err != nil {
-		ConnList.Release(confParams)
 		connectRabbitMQ.Close()
 		return nil, err
 	}
 	consumerName := os.Getenv("COMPUTERNAME")
 	messages, err := channelRabbitMQ.Consume(confParams.QName, consumerName, false, false, false, false, nil)
 	if err != nil {
-		ConnList.Release(confParams)
 		connectRabbitMQ.Close()
 		channelRabbitMQ.Close()
 		return nil, err
@@ -80,12 +40,15 @@ func ReceiveMessage() (<-chan interface{}, error) {
 	return abstractchan, nil
 }
 
-func DelayMessage(message interface{}) error {
+func DelayMessage(message interface{}, connectionParams interface{}) error {
+	confParams, ok := connectionParams.(qconfig)
+	if !ok {
+		return fmt.Errorf("connectionparams argument is not 'qconfig' type")
+	}
 	notification, ok := message.(Notification)
 	if !ok {
 		return fmt.Errorf("message is not notification")
 	}
-	confParams := ConnList.GetConfig(2)
 	connectRabbitMQ, err := amqp.Dial(confParams.QConnectionString)
 	if err != nil {
 		return err

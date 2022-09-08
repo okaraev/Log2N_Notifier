@@ -21,15 +21,6 @@ func GetRetrierOverloadInstance(Func func() (<-chan interface{}, error)) Retrier
 	return r
 }
 
-func GetRetrierDefaultInstance() Retrier {
-	r := Retrier{}
-	r.HoldTime = 10 * time.Second
-	r.MaxHoldTime = 360 * time.Second
-	r.Status = "Closed"
-	r.Operation = ReceiveMessage
-	return r
-}
-
 func (r *Retrier) Open() {
 	r.Status = "Open"
 }
